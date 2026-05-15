@@ -40,9 +40,11 @@ class SileroVAD:
         try:
             from silero_vad import load_silero_vad
         except ImportError as exc:
+            import platform
+            setup_script = "setup_mac.sh" if platform.system() == "Darwin" else "setup_rpi.sh"
             raise ImportError(
                 "silero-vad package is required. Install with: pip install silero-vad\n"
-                "(The setup script does this for you — re-run scripts/setup_mac.sh.)"
+                f"(The setup script does this for you — re-run scripts/{setup_script}.)"
             ) from exc
         # onnx=True avoids loading the full PyTorch model graph; CPU-only, ~2MB.
         self._model = load_silero_vad(onnx=True)

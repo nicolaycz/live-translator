@@ -37,7 +37,7 @@ echo "==> live-translator setup (model: $WHISPER_MODEL)"
 
 # --- Sanity ---
 if [[ "$(uname)" != "Darwin" ]]; then
-  echo "This script targets macOS. For Raspberry Pi, see scripts/setup_rpi.sh (TBD)."
+  echo "This script targets macOS. For Raspberry Pi, run: bash scripts/setup_rpi.sh"
   exit 1
 fi
 

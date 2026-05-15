@@ -41,15 +41,21 @@ class TranscriptionResult:
         return self.duration_s / self.elapsed_s if self.elapsed_s > 0 else 0.0
 
 
+def _setup_script_name() -> str:
+    import platform
+    return "setup_mac.sh" if platform.system() == "Darwin" else "setup_rpi.sh"
+
+
 def _ensure_binaries(model: str) -> Path:
     if not WHISPER_CLI.exists():
         raise FileNotFoundError(
-            f"whisper-cli not found at {WHISPER_CLI}. Run: bash scripts/setup_mac.sh"
+            f"whisper-cli not found at {WHISPER_CLI}. Run: bash scripts/{_setup_script_name()}"
         )
     model_path = whisper_model_path(model)
     if not model_path.exists():
         raise FileNotFoundError(
-            f"Whisper model not found at {model_path}. Run: bash scripts/setup_mac.sh {model}"
+            f"Whisper model not found at {model_path}. "
+            f"Run: bash scripts/{_setup_script_name()} {model}"
         )
     return model_path
 

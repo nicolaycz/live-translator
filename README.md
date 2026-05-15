@@ -2,7 +2,7 @@
 
 Real-time **Spanish → English** voice-to-voice translator. Offline, open source, edge-friendly.
 
-You speak Spanish into your microphone, you hear the English translation through your speakers. No cloud, no API keys, no telemetry. Same code path is intended to run on your Mac and on a Raspberry Pi 5.
+You speak Spanish into your microphone, you hear the English translation through your speakers. No cloud, no API keys, no telemetry. Same code path runs on macOS (Apple Silicon) and Raspberry Pi 5.
 
 ## Stack
 
@@ -103,6 +103,111 @@ You'll know it's active when your shell prompt is prefixed with `(.venv)`. To le
 The first time you run live mode, macOS will pop up a permission dialog asking to allow your terminal app (Terminal.app, iTerm, Ghostty, VSCode, etc.) to access the microphone. Allow it. If you accidentally deny, fix it in:
 
 > System Settings → Privacy & Security → Microphone → enable your terminal app
+
+---
+## Installation (Raspberry Pi 5)
+
+Tested on **Raspberry Pi 5 (8 GB)** running **64-bit Raspberry Pi OS (Bookworm)**. A 4 GB Pi 5 also works; 2 GB will OOM on the `small` model.
+
+You'll need a **USB microphone** (or a USB-audio dongle + 3.5 mm mic) and either a **USB/3.5 mm speaker** or a **Bluetooth speaker** paired ahead of time. The Pi 5 has no built-in audio input.
+
+First run downloads ~220 MB of models and compiles `whisper.cpp` from source — plan for ~15-20 minutes on a Pi 5 the first time.
+
+### Step 1 — Make sure your Pi is 64-bit and up-to-date
+
+```bash
+uname -m            # should print: aarch64
+cat /etc/os-release # should mention Debian 12 (bookworm) or newer
+```
+
+If `uname -m` prints `armv7l`, you're on the 32-bit OS — reflash with the 64-bit image from the Raspberry Pi Imager. The 32-bit OS will not work (PyTorch and ONNX wheels are aarch64-only).
+
+```bash
+sudo apt-get update && sudo apt-get upgrade -y
+```
+
+### Step 2 — Clone the repo
+
+```bash
+git clone <repo-url> live-translator
+cd live-translator
+```
+
+### Step 3 — Run the setup script
+
+This single command:
+1. Installs system packages via `apt` (cmake, build tools, portaudio, libsndfile, ffmpeg)
+2. Creates a Python virtualenv at `.venv/`
+3. Installs Python dependencies (CPU-only PyTorch wheel for aarch64)
+4. Clones and builds `whisper.cpp` with ARM NEON optimization (no GPU on Pi)
+5. Downloads the Whisper model (`base` by default on Pi — see below)
+6. Downloads Silero VAD and the Piper voice `en_US-lessac-medium`
+
+```bash
+bash scripts/setup_rpi.sh
+```
+
+The default model on Pi is **`base`** (not `small` as on Mac) because the Pi 5's CPU is roughly 4-6× slower than Apple Silicon for whisper.cpp. Override if you want:
+
+```bash
+bash scripts/setup_rpi.sh tiny    # ~75 MB,  fastest (~3x RTF on Pi 5)
+bash scripts/setup_rpi.sh base    # ~142 MB, recommended (~1.5-2x RTF)  (default)
+bash scripts/setup_rpi.sh small   # ~488 MB, slower (~0.7-1x RTF — borderline real-time)
+bash scripts/setup_rpi.sh medium  # ~1.5 GB, NOT recommended on Pi 5 — RTF < 1
+```
+
+> **RTF < 1 means the translator falls behind the speaker.** Stick to `tiny` or `base` for live use; reserve `small`/`medium` for batch (`translate-file`).
+
+The script will sudo to install apt packages — you'll be prompted once. It re-uses the same `.venv/` and `models/` layout as the macOS setup, so re-running is safe.
+
+### Step 4 — Activate the virtualenv
+
+```bash
+source .venv/bin/activate
+```
+
+Your shell prompt should now show `(.venv)`.
+
+### Step 5 — Plug in your USB mic and verify
+
+```bash
+live-translator devices
+```
+
+Look for your USB microphone in the **Input devices** table (it usually shows as `USB Audio CODEC` or similar). Note its index, then:
+
+```bash
+live-translator mic-test -i <index>
+```
+
+Speak Spanish for ~5 seconds. You should see the **level** bar moving and the **speech** bar lighting up. If `level` moves but `speech` stays flat, lower the threshold: `--vad-threshold 0.3`.
+
+### Step 6 — Go live
+
+```bash
+live-translator run --model base -i <mic-index> -o <speaker-index>
+```
+
+To use the system defaults, just `live-translator run`. See [Usage](#usage) below for all flags.
+
+### Raspberry Pi tips
+
+- **Audio backend.** Raspberry Pi OS Bookworm uses PipeWire by default. `sounddevice` (the lib we use) talks to PipeWire's PulseAudio shim transparently — no extra config needed. If you're on a stripped-down image with bare ALSA, install `pulseaudio` or `pipewire-pulse`.
+- **Bluetooth speakers.** Pair through `bluetoothctl` first, then `live-translator devices` will list the speaker. Latency over Bluetooth is ~150-300 ms higher than wired.
+- **No HDMI audio?** Run `sudo raspi-config` → **System Options → Audio** and set the output to the HDMI port you're using.
+- **Reduce CPU contention.** Close the desktop session (`sudo systemctl set-default multi-user.target` then reboot) and SSH in. Whisper benefits from all 4 cores being available — even Chromium idling on the desktop costs ~10-15% RTF.
+- **Active cooling.** A Pi 5 under sustained whisper-cpp load will thermal-throttle without the official Active Cooler or equivalent. Watch with `vcgencmd measure_temp` — sustained > 80°C means you need cooling.
+
+### Expected performance on Pi 5
+
+| Model    | Disk    | RTF on Pi 5 (4 cores) | Quality       | End-to-end latency |
+|----------|---------|------------------------|---------------|--------------------|
+| `tiny`   | ~75 MB  | ~3-5x                  | Rough         | ~1.0 s             |
+| `base`   | ~142 MB | ~1.5-2x                | OK            | ~1.5-2.0 s         |
+| `small`  | ~488 MB | ~0.7-1x                | Good          | ~3-5 s (laggy)     |
+| `medium` | ~1.5 GB | ~0.2-0.3x              | Very good     | unusable live      |
+
+End-to-end latency includes the 700 ms silence-detection window. Numbers are rough estimates on an 8 GB Pi 5 with the official Active Cooler.
 
 ---
 
@@ -294,13 +399,26 @@ You're using the same physical device for input and output (common with AirPods)
 **Setup downloads are very slow**
 HuggingFace can be slow from some regions. The script uses `curl -L --fail`, so just re-run if it stalls — partial files will be re-downloaded; complete ones are skipped.
 
+**(Raspberry Pi) `uname -m` prints `armv7l` instead of `aarch64`**
+You're on the 32-bit Raspberry Pi OS. Reflash with the 64-bit image from Raspberry Pi Imager. The Python wheels we depend on (PyTorch, onnxruntime) are aarch64-only.
+
+**(Raspberry Pi) `live-translator devices` lists no inputs**
+Your USB mic isn't being detected. Check `arecord -l` — if it shows your card there but not in the live-translator output, your user isn't in the `audio` group: `sudo usermod -aG audio $USER` then log out and back in.
+
+**(Raspberry Pi) `pip install -e .` fails compiling torch / numpy from source**
+You're probably on 32-bit OS, or `python3 --version` is < 3.11. Both PyTorch and our `numpy<2` pin require aarch64 and Python 3.11/3.12 — anything else falls back to a slow source build that usually OOMs on a Pi.
+
+**(Raspberry Pi) RTF is way below the expected numbers**
+Check `vcgencmd measure_temp` — if it's > 80°C the Pi is throttling. Add active cooling. Also confirm nothing else is using the CPU (`htop`), and that you're not on a USB-3 SSD with sluggish I/O on the model file.
+
 ---
 
 ## Project layout
 
 ```
 live-translator/
-├── scripts/setup_mac.sh         # one-shot bootstrap
+├── scripts/setup_mac.sh         # one-shot bootstrap (macOS)
+├── scripts/setup_rpi.sh         # one-shot bootstrap (Raspberry Pi 5, 64-bit)
 ├── vendor/whisper.cpp/          # cloned + built (gitignored)
 ├── models/                      # downloaded weights (gitignored)
 │   ├── whisper/ggml-*.bin
@@ -328,7 +446,7 @@ live-translator/
 - [x] Phase 3 — Mic capture + Silero VAD
 - [x] Phase 4 — Full live pipeline
 - [x] Phase 5 — Metrics, model size flag, benchmark
-- [ ] Phase 6 — Raspberry Pi 5 port (`scripts/setup_rpi.sh`)
+- [x] Phase 6 — Raspberry Pi 5 port (`scripts/setup_rpi.sh`)
 
 ## License
 

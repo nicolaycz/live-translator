@@ -39,12 +39,14 @@ def _load_voice(voice: str):
     """Lazy-load and cache a Piper voice."""
     from piper import PiperVoice  # imported here to keep CLI startup fast
 
+    import platform
+    setup_script = "setup_mac.sh" if platform.system() == "Darwin" else "setup_rpi.sh"
     onnx, config = piper_voice_paths(voice)
     if not onnx.exists() or not config.exists():
         raise FileNotFoundError(
             f"Piper voice files missing for '{voice}':\n"
             f"  {onnx}\n  {config}\n"
-            f"Run: bash scripts/setup_mac.sh"
+            f"Run: bash scripts/{setup_script}"
         )
     return PiperVoice.load(str(onnx), config_path=str(config))
 
