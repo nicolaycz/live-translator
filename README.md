@@ -2,7 +2,7 @@
 
 Real-time **Spanish → English** voice-to-voice translator. Offline, open source, edge-friendly.
 
-You speak Spanish into your microphone, you hear the English translation through your speakers. No cloud, no API keys, no telemetry. Same code path runs on macOS (Apple Silicon) and Raspberry Pi 5.
+You speak Spanish into your microphone, you hear the English translation through your speakers. No cloud, no API keys, no telemetry. Same code path runs on macOS (Apple Silicon), Windows 10/11, and Raspberry Pi 5.
 
 ## Stack
 
@@ -105,6 +105,108 @@ The first time you run live mode, macOS will pop up a permission dialog asking t
 > System Settings → Privacy & Security → Microphone → enable your terminal app
 
 ---
+
+## Installation (Windows 10 / 11)
+
+Native Windows install (not WSL). Tested target: **64-bit Windows 10 22H2** and **Windows 11**. The setup compiles `whisper.cpp` with MSVC, uses CPU only (no Metal/CUDA), and lives entirely inside `.venv\` and `models\` — your system Python is not touched.
+
+First run downloads ~565 MB of models and compiles `whisper.cpp` from source. Plan for ~15-20 minutes the first time.
+
+### Step 1 — Install prerequisites
+
+You need **Python 3.11 or 3.12**, **CMake**, **Git**, and **Visual Studio Build Tools 2022** (the "Desktop development with C++" workload). The easiest path is `winget` (PowerShell, run as a regular user):
+
+```powershell
+winget install --id Python.Python.3.11
+winget install --id Kitware.CMake
+winget install --id Git.Git
+winget install --id Microsoft.VisualStudio.2022.BuildTools
+```
+
+After the Build Tools install finishes, open **Visual Studio Installer** → **Modify** → check **"Desktop development with C++"** → **Modify**. (Without that workload, cmake will fail with "No CMAKE_C_COMPILER could be found.")
+
+When installing Python, make sure **"Add python.exe to PATH"** is checked. After all four installs, **close and reopen PowerShell** so the new `PATH` is picked up.
+
+Verify:
+```powershell
+python --version    # 3.11.x or 3.12.x
+cmake --version
+git --version
+```
+
+### Step 2 — Clone the repo
+
+```powershell
+git clone <repo-url> live-translator
+cd live-translator
+```
+
+> If you're going to clone into `C:\Users\<you>\Documents\…`, enable Windows long-path support to be safe: `New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force` (run PowerShell as admin), then reboot.
+
+### Step 3 — Run the setup script
+
+PowerShell blocks unsigned scripts by default. Bypass for this one invocation:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1
+```
+
+Or pick a model size:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 tiny
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 base
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 small    # default
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 medium
+```
+
+The script:
+1. Verifies Python 3.11/3.12, cmake, MSVC are present
+2. Creates `.venv\` and installs Python deps (CPU-only torch wheel for `win_amd64`)
+3. Clones and builds `whisper.cpp` with MSVC (binary lands in `vendor\whisper.cpp\build\bin\Release\whisper-cli.exe`)
+4. Downloads the selected Whisper model, Silero VAD, and the Piper voice
+
+Re-running is safe — anything already downloaded or built is skipped.
+
+### Step 4 — Activate the virtualenv
+
+Every PowerShell session that wants to use `live-translator` needs the virtualenv active:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+If PowerShell refuses with `running scripts is disabled on this system`, run once per user:
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+Your prompt should then start with `(.venv)`. To leave, run `deactivate`.
+
+### Step 5 — Grant microphone permission
+
+The first time you run live mode, Windows will pop up a permission dialog asking to let your terminal access the microphone. Allow it. If you accidentally deny, fix it in:
+
+> **Settings → Privacy & security → Microphone** → enable "Microphone access" and turn on access for "Desktop apps".
+
+### Step 6 — Go live
+
+```powershell
+live-translator devices       # find your mic and speaker
+live-translator mic-test      # 10-second VU + speech-detection check
+live-translator run           # full live translation
+```
+
+All the flags from the [Usage](#usage) section work identically on Windows.
+
+### Windows tips
+
+- **Audio backend.** `sounddevice` talks to **WASAPI** through PortAudio on Windows — works out of the box for almost any mic and speaker, including USB and Bluetooth.
+- **Windows Defender slows the build.** Real-time scanning re-checks every `.obj` file. If the whisper.cpp build is glacial, add `vendor\whisper.cpp\build` to Defender's exclusions: **Settings → Privacy & security → Windows Security → Virus & threat protection → Manage settings → Exclusions → Add `…\live-translator\vendor`**.
+- **Bluetooth headsets.** Same gotcha as macOS — when Windows uses a Bluetooth headset for both input and output, it switches to the phone-call (HFP) profile, dropping audio quality to 8-16 kHz mono. Prefer a separate mic.
+- **Performance.** Expected RTF on Windows is similar to Linux on equivalent hardware — a recent Intel/AMD laptop will do `small` comfortably; an older one should stick to `base`. See the [Apple Silicon performance table](#expected-performance-apple-silicon) as a rough ceiling — Windows on similar-class hardware lands ~30-40% slower because there's no Metal.
+
+---
+
 ## Installation (Raspberry Pi 5)
 
 Tested on **Raspberry Pi 5 (8 GB)** running **64-bit Raspberry Pi OS (Bookworm)**. A 4 GB Pi 5 also works; 2 GB will OOM on the `small` model.
@@ -411,6 +513,21 @@ You're probably on 32-bit OS, or `python3 --version` is < 3.11. Both PyTorch and
 **(Raspberry Pi) RTF is way below the expected numbers**
 Check `vcgencmd measure_temp` — if it's > 80°C the Pi is throttling. Add active cooling. Also confirm nothing else is using the CPU (`htop`), and that you're not on a USB-3 SSD with sluggish I/O on the model file.
 
+**(Windows) `Activate.ps1 cannot be loaded because running scripts is disabled`**
+PowerShell's default execution policy blocks unsigned scripts. Run once per user: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`. This allows local scripts you wrote but still requires remote scripts to be signed — it's safe.
+
+**(Windows) `cmake: command not found` or `No CMAKE_C_COMPILER could be found`**
+Either cmake isn't installed (`winget install --id Kitware.CMake`) or Visual Studio Build Tools is missing the C++ workload. Open **Visual Studio Installer → Modify → Desktop development with C++ → Modify**. Then restart PowerShell so the new env vars are picked up.
+
+**(Windows) `whisper-cli.exe` not found after a "successful" build**
+With MSVC's multi-config generator, the binary lands in `vendor\whisper.cpp\build\bin\Release\whisper-cli.exe`, not directly in `build\bin\`. The code looks in both — if it's reporting missing, the build silently failed. Scroll up in the setup output for the actual cmake error.
+
+**(Windows) Build of whisper.cpp is extremely slow**
+Windows Defender is rescanning every `.obj` file. Add `vendor\whisper.cpp\build` to Defender exclusions (see "Windows tips" above), then `Remove-Item -Recurse -Force vendor\whisper.cpp\build` and re-run the setup script.
+
+**(Windows) `live-translator` command not found after activating the venv**
+Activation didn't take. Confirm your prompt shows `(.venv)`. If not, you ran the wrong activation script — use `.\.venv\Scripts\Activate.ps1` (PowerShell), not `.venv\Scripts\activate.bat` (cmd.exe).
+
 ---
 
 ## Project layout
@@ -419,6 +536,7 @@ Check `vcgencmd measure_temp` — if it's > 80°C the Pi is throttling. Add acti
 live-translator/
 ├── scripts/setup_mac.sh         # one-shot bootstrap (macOS)
 ├── scripts/setup_rpi.sh         # one-shot bootstrap (Raspberry Pi 5, 64-bit)
+├── scripts/setup_windows.ps1    # one-shot bootstrap (Windows 10/11, native)
 ├── vendor/whisper.cpp/          # cloned + built (gitignored)
 ├── models/                      # downloaded weights (gitignored)
 │   ├── whisper/ggml-*.bin
@@ -447,6 +565,7 @@ live-translator/
 - [x] Phase 4 — Full live pipeline
 - [x] Phase 5 — Metrics, model size flag, benchmark
 - [x] Phase 6 — Raspberry Pi 5 port (`scripts/setup_rpi.sh`)
+- [x] Phase 7 — Native Windows port (`scripts/setup_windows.ps1`)
 
 ## License
 

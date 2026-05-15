@@ -40,13 +40,19 @@ def _load_voice(voice: str):
     from piper import PiperVoice  # imported here to keep CLI startup fast
 
     import platform
-    setup_script = "setup_mac.sh" if platform.system() == "Darwin" else "setup_rpi.sh"
+    system = platform.system()
+    if system == "Darwin":
+        setup_cmd = "bash scripts/setup_mac.sh"
+    elif system == "Windows":
+        setup_cmd = "powershell -ExecutionPolicy Bypass -File scripts\\setup_windows.ps1"
+    else:
+        setup_cmd = "bash scripts/setup_rpi.sh"
     onnx, config = piper_voice_paths(voice)
     if not onnx.exists() or not config.exists():
         raise FileNotFoundError(
             f"Piper voice files missing for '{voice}':\n"
             f"  {onnx}\n  {config}\n"
-            f"Run: bash scripts/{setup_script}"
+            f"Run: {setup_cmd}"
         )
     return PiperVoice.load(str(onnx), config_path=str(config))
 

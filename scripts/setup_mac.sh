@@ -37,7 +37,9 @@ echo "==> live-translator setup (model: $WHISPER_MODEL)"
 
 # --- Sanity ---
 if [[ "$(uname)" != "Darwin" ]]; then
-  echo "This script targets macOS. For Raspberry Pi, run: bash scripts/setup_rpi.sh"
+  echo "This script targets macOS."
+  echo "  Raspberry Pi: bash scripts/setup_rpi.sh"
+  echo "  Windows:      powershell -ExecutionPolicy Bypass -File scripts\\setup_windows.ps1"
   exit 1
 fi
 

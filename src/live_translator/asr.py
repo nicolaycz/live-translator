@@ -22,7 +22,7 @@ import typer
 
 from live_translator.paths import (
     DEFAULT_WHISPER_MODEL,
-    WHISPER_CLI,
+    whisper_cli_path,
     whisper_model_path,
 )
 
@@ -41,21 +41,28 @@ class TranscriptionResult:
         return self.duration_s / self.elapsed_s if self.elapsed_s > 0 else 0.0
 
 
-def _setup_script_name() -> str:
+def _setup_command(arg: str = "") -> str:
+    """Return the platform-appropriate setup command (mac/linux/windows)."""
     import platform
-    return "setup_mac.sh" if platform.system() == "Darwin" else "setup_rpi.sh"
+    system = platform.system()
+    suffix = f" {arg}" if arg else ""
+    if system == "Darwin":
+        return f"bash scripts/setup_mac.sh{suffix}"
+    if system == "Windows":
+        return f"powershell -ExecutionPolicy Bypass -File scripts\\setup_windows.ps1{suffix}"
+    return f"bash scripts/setup_rpi.sh{suffix}"
 
 
 def _ensure_binaries(model: str) -> Path:
-    if not WHISPER_CLI.exists():
+    cli = whisper_cli_path()
+    if not cli.exists():
         raise FileNotFoundError(
-            f"whisper-cli not found at {WHISPER_CLI}. Run: bash scripts/{_setup_script_name()}"
+            f"whisper-cli not found at {cli}. Run: {_setup_command()}"
         )
     model_path = whisper_model_path(model)
     if not model_path.exists():
         raise FileNotFoundError(
-            f"Whisper model not found at {model_path}. "
-            f"Run: bash scripts/{_setup_script_name()} {model}"
+            f"Whisper model not found at {model_path}. Run: {_setup_command(model)}"
         )
     return model_path
 
@@ -76,7 +83,7 @@ def transcribe_file(
     with tempfile.TemporaryDirectory() as tmp:
         out_prefix = Path(tmp) / "out"
         cmd = [
-            str(WHISPER_CLI),
+            str(whisper_cli_path()),
             "-m", str(model_path),
             "-f", str(wav_path),
             "-l", source_language,

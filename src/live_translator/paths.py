@@ -1,5 +1,6 @@
 """Centralized paths for binaries and model files."""
 
+import platform
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -7,7 +8,37 @@ MODELS_DIR = REPO_ROOT / "models"
 VENDOR_DIR = REPO_ROOT / "vendor"
 
 WHISPER_CPP_DIR = VENDOR_DIR / "whisper.cpp"
-WHISPER_CLI = WHISPER_CPP_DIR / "build" / "bin" / "whisper-cli"
+
+
+def _resolve_whisper_cli() -> Path:
+    """Locate the whisper-cli binary across build layouts.
+
+    - macOS / Linux:    build/bin/whisper-cli
+    - Windows (MSVC):   build/bin/Release/whisper-cli.exe    (multi-config generator)
+    - Windows (Ninja):  build/bin/whisper-cli.exe            (single-config generator)
+    """
+    bin_dir = WHISPER_CPP_DIR / "build" / "bin"
+    if platform.system() == "Windows":
+        candidates = [
+            bin_dir / "Release" / "whisper-cli.exe",
+            bin_dir / "whisper-cli.exe",
+        ]
+    else:
+        candidates = [bin_dir / "whisper-cli"]
+    for c in candidates:
+        if c.exists():
+            return c
+    # Fall back to the first candidate so callers get a readable "missing" path.
+    return candidates[0]
+
+
+def whisper_cli_path() -> Path:
+    """Re-resolve at call-time so a build that happens after import is still picked up."""
+    return _resolve_whisper_cli()
+
+
+# Eagerly resolved value, kept for backward compatibility with existing imports.
+WHISPER_CLI = _resolve_whisper_cli()
 
 WHISPER_MODELS_DIR = MODELS_DIR / "whisper"
 VAD_MODELS_DIR = MODELS_DIR / "vad"
