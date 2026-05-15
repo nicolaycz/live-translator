@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.python-version.local
+
+# uv
+.uv/
+
+# Modelos descargados (pesados, los recupera setup script)
+models/
+!models/.gitkeep
+
+# Build de whisper.cpp
+vendor/
+*.bin
+*.onnx
+*.gguf
+
+# Audio de prueba
+samples/*.wav
+samples/*.mp3
+!samples/.gitkeep
+
+# Outputs
+translations/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editores
+.vscode/
+.idea/
+*.swp
